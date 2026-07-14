@@ -411,8 +411,7 @@ export async function runCodexAppServerSideQuestion(
       runId,
       signal: runAbortController.signal,
     });
-    // Auth refresh is a physical-client concern; the shared runtime handler
-    // stays installed once per client instead of once per side question.
+    // Auth refresh is client-owned; keep one shared handler per physical client.
     ensureCodexAppServerClientRuntime(client, {
       agentDir: params.agentDir,
       authProfileId:
@@ -492,6 +491,7 @@ export async function runCodexAppServerSideQuestion(
             toolBridge,
             signal: runAbortController.signal,
             timeoutMs,
+            executionState: sideRunParams,
           });
           emitDynamicToolTerminalDiagnostic({
             ...diagnosticContext,

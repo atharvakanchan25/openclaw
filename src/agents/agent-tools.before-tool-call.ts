@@ -76,6 +76,8 @@ import {
   adjustedParamsByToolCallId,
   buildAdjustedParamsKey,
   preExecutionBlockedToolCallIds,
+  recordToolExecutionTracked,
+  recordToolExecutionStarted,
   recordStructuredReplaySafeToolCall,
   structuredReplaySafeToolCallIds,
 } from "./agent-tools.before-tool-call.state.js";
@@ -1722,7 +1724,6 @@ export async function runBeforeToolCallHook(args: {
   }
 }
 
-/** Wrap a tool execute function with before_tool_call hooks and diagnostics. */
 export function wrapToolWithBeforeToolCallHook(
   tool: AnyAgentTool,
   ctx?: HookContext,
@@ -1738,14 +1739,11 @@ export function wrapToolWithBeforeToolCallHook(
     ...(options.approvalMode ? { approvalMode: options.approvalMode } : {}),
     emitDiagnostics: options.emitDiagnostics !== false,
   };
-  // Resolved once per wrap from the same opt-in config gate the model-content
-  // path uses; controls whether tool input/output rides the trusted private channel.
   const toolContentPolicy = resolveDiagnosticModelContentCapturePolicy(ctx?.config);
   const wrappedTool: AnyAgentTool = {
     ...tool,
     execute: async (toolCallId, params, signal, onUpdate) => {
-      // Allocate before any async preparation so parallel completions retain
-      // the assistant message's tool-call order.
+      recordToolExecutionTracked(toolCallId, ctx?.runId);
       const toolCallOrdinal = ctx?.allocateToolOutcomeOrdinal?.(toolCallId);
       const preExecutionStartedAt = Date.now();
       const normalizedToolName = normalizeToolName(toolName || "tool");
@@ -1885,6 +1883,8 @@ export function wrapToolWithBeforeToolCallHook(
       }
       let executeParams: unknown;
       try {
+        // Stop cancellation-ignoring hooks before the synchronous mutation boundary.
+        signal?.throwIfAborted();
         executeParams = reconcileCodeModeExecBeforeHookParams({
           tool,
           originalParams: preparedParams,
@@ -1902,6 +1902,7 @@ export function wrapToolWithBeforeToolCallHook(
       }
       recordAdjustedParamsForToolCall(toolCallId, executeParams, ctx?.runId);
       const eventBase = buildEventBase(executeParams);
+      recordToolExecutionStarted(toolCallId, ctx?.runId);
       if (hookOptions.emitDiagnostics) {
         emitTrustedDiagnosticEvent({
           type: "tool.execution.started",
@@ -2027,8 +2028,7 @@ export function rewrapToolWithBeforeToolCallHook(
   if (sourceTool === tool) {
     return wrapToolWithBeforeToolCallHook(tool, ctx ?? preservedContext, options);
   }
-  // Keep schema and metadata replacements applied after the original wrap while
-  // restoring the unwrapped execute function for the new hook context.
+  // Preserve post-wrap schema/metadata while restoring the source execute function.
   const rewrapSource: AnyAgentTool = {
     ...tool,
     execute: sourceTool.execute,

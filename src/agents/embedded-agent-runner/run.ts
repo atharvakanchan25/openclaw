@@ -126,6 +126,7 @@ import {
 } from "../session-suspension.js";
 import { resolveCandidateThinkingLevel } from "../thinking-runtime.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
+import { TOOL_EXECUTION_RUNTIME, TOOL_MUTATION_RUNTIME } from "../tool-runtime.js";
 import { deriveContextPromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
 import { runPostCompactionSideEffects } from "./compaction-hooks.js";
@@ -1740,9 +1741,7 @@ async function runEmbeddedAgentInternal(
             fallbackActive: modelId !== requestedModelId || Boolean(resolveRuntimeFallbackReason()),
             fallbackReason: resolveRuntimeFallbackReason(),
             isFinalFallbackAttempt: params.isFinalFallbackAttempt,
-            // Use the harness selected before model/auth setup for the actual
-            // attempt too. Otherwise plugin-owned transports can skip OpenClaw auth
-            // bootstrap but drift back to OpenClaw when the attempt is created.
+            // Preserve pre-auth harness selection so plugin transports cannot drift to OpenClaw.
             agentHarnessId: agentHarness.id,
             agentHarnessRuntimeOverride: agentHarness.id,
             modelSelectionLocked: params.modelSelectionLocked,
@@ -1760,6 +1759,8 @@ async function runEmbeddedAgentInternal(
                 }
               : {}),
             runtimePlan,
+            toolExecutionRuntime: TOOL_EXECUTION_RUNTIME,
+            toolMutationRuntime: TOOL_MUTATION_RUNTIME,
             model: applyAuthHeaderOverride(
               applyLocalNoAuthHeaderOverride(effectiveModel, apiKeyInfo),
               // When runtime auth exchange produced a different credential
@@ -1775,8 +1776,7 @@ async function runEmbeddedAgentInternal(
             initialReplayState: accumulatedReplayState,
             authStorage,
             authProfileStore: runAttemptAuthProfileStore,
-            // These harnesses build OpenClaw tools internally. Keep transport auth
-            // scoped while letting tool construction see plugin/provider creds.
+            // Harness-built tools need plugin/provider creds while transport auth stays scoped.
             toolAuthProfileStore: harnessBuildsOpenClawTools ? attemptAuthProfileStore : undefined,
             modelRegistry,
             agentId: workspaceResolution.agentId,
