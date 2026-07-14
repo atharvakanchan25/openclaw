@@ -31,7 +31,7 @@ import {
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import {
-  consumeToolExecutionStarted,
+  consumeTrackedToolExecutionStarted,
   peekTrackedToolExecutionStarted,
   resetAdjustedParamsByToolCallIdForTests,
 } from "./agent-tools.before-tool-call.state.js";
@@ -133,7 +133,7 @@ describe("before_tool_call hook integration", () => {
       extensionContext,
     );
     expect(peekTrackedToolExecutionStarted("call-1")).toBe(true);
-    expect(consumeToolExecutionStarted("call-1")).toBe(true);
+    expect(consumeTrackedToolExecutionStarted("call-1")).toBe(true);
     expect(peekTrackedToolExecutionStarted("call-1")).toBeUndefined();
   });
 
@@ -225,11 +225,11 @@ describe("before_tool_call hook integration", () => {
       },
     });
     expect(execute).not.toHaveBeenCalled();
-    expect(consumeToolExecutionStarted("call-3")).toBe(false);
+    expect(consumeTrackedToolExecutionStarted("call-3")).toBe(false);
   });
 
   it("does not enter the tool body when a slow hook settles after cancellation", async () => {
-    let releaseHook = () => undefined;
+    let releaseHook: () => void = () => {};
     const hookGate = new Promise<void>((resolve) => {
       releaseHook = resolve;
     });
@@ -251,7 +251,7 @@ describe("before_tool_call hook integration", () => {
 
     await expect(result).rejects.toThrow("tool timed out");
     expect(execute).not.toHaveBeenCalled();
-    expect(consumeToolExecutionStarted("call-late-abort")).toBe(false);
+    expect(consumeTrackedToolExecutionStarted("call-late-abort")).toBe(false);
   });
 
   it("does not execute lower-priority hooks after block=true", async () => {
