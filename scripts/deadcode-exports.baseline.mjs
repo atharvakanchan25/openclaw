@@ -73,7 +73,6 @@ export const KNIP_UNUSED_EXPORT_BASELINE = [
   "extensions/qa-lab/src/suite-runtime-agent-session.ts: setSessionStoreLockRetryDelaysMsForTests",
   "extensions/qa-lab/src/suite-runtime-flow.ts: createQaSuiteScenarioFlowApi",
   "extensions/qa-matrix/src/shared/live-transport-cli.ts: createLazyCliRuntimeLoader",
-  "extensions/raft/src/config-schema.ts: RaftConfigSchema",
   "extensions/signal/src/reply-authors.ts: clearSignalReplyAuthorsForTest",
   "extensions/telegram/src/account-throttler.ts: clearAccountThrottlersForTest",
   "extensions/telegram/src/bot-info-cache.ts: setTelegramBotInfoCacheStoreForTest",
