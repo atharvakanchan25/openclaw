@@ -767,7 +767,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     const preview = renderText?.("| A | B |\n| --- | --- |\n| 1 | 2 |");
     expect(preview?.richMessage).toEqual(
       expect.objectContaining({
-        html: expect.stringContaining("<table bordered striped>"),
+        blocks: [expect.objectContaining({ type: "table", is_bordered: true, is_striped: true })],
       }),
     );
   });
