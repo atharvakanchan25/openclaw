@@ -498,6 +498,7 @@ export const pt_BR: TranslationMap = {
       "Workers na nuvem precisam de um contexto seguro do navegador para que a recuperação possa proteger sua tarefa.",
     cloudStartFailed:
       "A sessão foi criada localmente, mas a inicialização na nuvem falhou: {error}",
+    cloudSyncsFolder: "Sincroniza {folder} com o worker na nuvem",
     folder: "Pasta",
     folderPlaceholder: "Workspace do agente",
     browse: "Procurar pastas",

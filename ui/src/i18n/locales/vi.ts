@@ -497,6 +497,7 @@ export const vi: TranslationMap = {
     cloudSecureContextRequired:
       "Worker đám mây cần ngữ cảnh trình duyệt bảo mật để tính năng khôi phục có thể bảo vệ tác vụ của bạn.",
     cloudStartFailed: "Phiên đã được tạo cục bộ, nhưng không thể khởi động trên đám mây: {error}",
+    cloudSyncsFolder: "Đồng bộ {folder} lên cloud worker",
     folder: "Thư mục",
     folderPlaceholder: "Không gian làm việc của agent",
     browse: "Duyệt thư mục",

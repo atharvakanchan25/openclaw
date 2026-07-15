@@ -493,6 +493,7 @@ export const hi: TranslationMap = {
     cloudSecureContextRequired:
       "Cloud वर्कर को एक सुरक्षित ब्राउज़र संदर्भ की आवश्यकता है, ताकि पुनर्प्राप्ति आपके कार्य को सुरक्षित रख सके।",
     cloudStartFailed: "सत्र स्थानीय रूप से बनाया गया था, लेकिन Cloud स्टार्टअप विफल रहा: {error}",
+    cloudSyncsFolder: "{folder} को क्लाउड वर्कर के साथ सिंक करता है",
     folder: "फ़ोल्डर",
     folderPlaceholder: "Agent workspace",
     browse: "फ़ोल्डर ब्राउज़ करें",

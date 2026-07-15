@@ -499,6 +499,7 @@ export const es: TranslationMap = {
     cloudSecureContextRequired:
       "Los trabajadores en la nube necesitan un contexto de navegador seguro para que la recuperación pueda proteger tu tarea.",
     cloudStartFailed: "La sesión se creó localmente, pero el inicio en la nube falló: {error}",
+    cloudSyncsFolder: "Sincroniza {folder} con el trabajador en la nube",
     folder: "Carpeta",
     folderPlaceholder: "Espacio de trabajo del agente",
     browse: "Explorar carpetas",

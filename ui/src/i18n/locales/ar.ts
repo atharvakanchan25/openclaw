@@ -491,6 +491,7 @@ export const ar: TranslationMap = {
     cloudSecureContextRequired:
       "تحتاج عوامل السحابة إلى سياق متصفح آمن حتى تتمكن الاستعادة من حماية مهمتك.",
     cloudStartFailed: "تم إنشاء الجلسة محليًا، ولكن تعذّر بدء التشغيل السحابي: {error}",
+    cloudSyncsFolder: "يزامن {folder} إلى العامل السحابي",
     folder: "المجلد",
     folderPlaceholder: "مساحة عمل الوكيل",
     browse: "تصفح المجلدات",

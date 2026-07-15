@@ -500,6 +500,7 @@ export const tr: TranslationMap = {
       "Kurtarma işleminin görevinizi koruyabilmesi için bulut çalışanlarının güvenli bir tarayıcı bağlamına ihtiyacı vardır.",
     cloudStartFailed:
       "Oturum yerel olarak oluşturuldu ancak bulutta başlatma başarısız oldu: {error}",
+    cloudSyncsFolder: "{folder} klasörünü bulut çalışanına eşitler",
     folder: "Klasör",
     folderPlaceholder: "Agent workspace",
     browse: "Klasörlere göz at",

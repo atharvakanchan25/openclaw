@@ -505,6 +505,7 @@ export const fr: TranslationMap = {
       "Les workers cloud nécessitent un contexte de navigateur sécurisé afin que la récupération puisse protéger votre tâche.",
     cloudStartFailed:
       "La session a été créée localement, mais le démarrage dans le cloud a échoué : {error}",
+    cloudSyncsFolder: "Synchronise {folder} avec le worker cloud",
     folder: "Dossier",
     folderPlaceholder: "Espace de travail de l’agent",
     browse: "Parcourir les dossiers",

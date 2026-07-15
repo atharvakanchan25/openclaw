@@ -483,6 +483,7 @@ export const zh_TW: TranslationMap = {
     cloudRequiresWorktree: "雲端工作器需要受管理的工作樹",
     cloudSecureContextRequired: "雲端工作器需要安全的瀏覽器環境，以便復原機制保護您的工作。",
     cloudStartFailed: "工作階段已在本機建立，但雲端啟動失敗：{error}",
+    cloudSyncsFolder: "將 {folder} 同步到雲端 worker",
     folder: "資料夾",
     folderPlaceholder: "Agent 工作區",
     browse: "瀏覽資料夾",

@@ -484,6 +484,7 @@ export const zh_CN: TranslationMap = {
     cloudRequiresWorktree: "云端工作器需要托管工作树",
     cloudSecureContextRequired: "云端工作器需要安全的浏览器上下文，以便恢复功能保护您的任务。",
     cloudStartFailed: "会话已在本地创建，但云端启动失败：{error}",
+    cloudSyncsFolder: "将 {folder} 同步到云端 worker",
     folder: "文件夹",
     folderPlaceholder: "Agent 工作区",
     browse: "浏览文件夹",

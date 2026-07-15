@@ -498,6 +498,7 @@ export const ru: TranslationMap = {
     cloudSecureContextRequired:
       "Облачным исполнителям требуется безопасный контекст браузера, чтобы функция восстановления могла защитить вашу задачу.",
     cloudStartFailed: "Сеанс был создан локально, но не удалось запустить его в облаке: {error}",
+    cloudSyncsFolder: "Синхронизирует {folder} с облачным воркером",
     folder: "Папка",
     folderPlaceholder: "Рабочая область агента",
     browse: "Обзор папок",

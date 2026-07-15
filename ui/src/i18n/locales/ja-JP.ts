@@ -503,6 +503,7 @@ export const ja_JP: TranslationMap = {
       "復旧時にタスクを保護できるようにするには、クラウドワーカーにセキュアなブラウザーコンテキストが必要です。",
     cloudStartFailed:
       "セッションはローカルに作成されましたが、クラウドの起動に失敗しました: {error}",
+    cloudSyncsFolder: "{folder} をクラウドワーカーに同期します",
     folder: "フォルダ",
     folderPlaceholder: "エージェントワークスペース",
     browse: "フォルダを参照",

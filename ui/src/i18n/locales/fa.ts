@@ -495,6 +495,7 @@ export const fa: TranslationMap = {
     cloudSecureContextRequired:
       "عامل‌های ابری به یک محیط امن مرورگر نیاز دارند تا بازیابی بتواند از وظیفه شما محافظت کند.",
     cloudStartFailed: "نشست به‌صورت محلی ایجاد شد، اما راه‌اندازی ابری ناموفق بود: {error}",
+    cloudSyncsFolder: "{folder} را با کارگر ابری همگام‌سازی می‌کند",
     folder: "پوشه",
     folderPlaceholder: "فضای کاری Agent",
     browse: "مرور پوشه‌ها",

@@ -495,6 +495,7 @@ export const id: TranslationMap = {
     cloudSecureContextRequired:
       "Worker cloud memerlukan konteks browser yang aman agar pemulihan dapat melindungi tugas Anda.",
     cloudStartFailed: "Sesi dibuat secara lokal, tetapi proses memulai cloud gagal: {error}",
+    cloudSyncsFolder: "Menyinkronkan {folder} ke cloud worker",
     folder: "Folder",
     folderPlaceholder: "Ruang kerja agen",
     browse: "Jelajahi folder",

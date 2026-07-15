@@ -502,6 +502,7 @@ export const it: TranslationMap = {
       "I worker cloud necessitano di un contesto del browser sicuro affinché il ripristino possa proteggere la tua attività.",
     cloudStartFailed:
       "La sessione è stata creata localmente, ma l'avvio nel cloud non è riuscito: {error}",
+    cloudSyncsFolder: "Sincronizza {folder} con il worker cloud",
     folder: "Cartella",
     folderPlaceholder: "Area di lavoro dell'agente",
     browse: "Sfoglia cartelle",

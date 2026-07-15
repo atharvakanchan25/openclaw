@@ -500,6 +500,7 @@ export const nl: TranslationMap = {
       "Cloudworkers hebben een beveiligde browsercontext nodig, zodat herstel je taak kan beschermen.",
     cloudStartFailed:
       "De sessie is lokaal aangemaakt, maar het opstarten in de cloud is mislukt: {error}",
+    cloudSyncsFolder: "Synchroniseert {folder} naar de cloud worker",
     folder: "Map",
     folderPlaceholder: "Agent-werkruimte",
     browse: "Door mappen bladeren",

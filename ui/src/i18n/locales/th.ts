@@ -489,6 +489,7 @@ export const th: TranslationMap = {
     cloudSecureContextRequired:
       "เวิร์กเกอร์คลาวด์ต้องใช้บริบทเบราว์เซอร์ที่ปลอดภัย เพื่อให้การกู้คืนสามารถปกป้องงานของคุณได้",
     cloudStartFailed: "สร้างเซสชันภายในเครื่องแล้ว แต่การเริ่มต้นระบบคลาวด์ล้มเหลว: {error}",
+    cloudSyncsFolder: "ซิงค์ {folder} ไปยัง cloud worker",
     folder: "โฟลเดอร์",
     folderPlaceholder: "พื้นที่ทำงานของ Agent",
     browse: "เรียกดูโฟลเดอร์",

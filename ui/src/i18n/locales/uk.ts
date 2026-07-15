@@ -497,6 +497,7 @@ export const uk: TranslationMap = {
     cloudSecureContextRequired:
       "Хмарним виконавцям потрібен захищений контекст браузера, щоб відновлення могло захистити ваше завдання.",
     cloudStartFailed: "Сеанс створено локально, але запуск у хмарі завершився помилкою: {error}",
+    cloudSyncsFolder: "Синхронізує {folder} із хмарним воркером",
     folder: "Папка",
     folderPlaceholder: "Робоча область агента",
     browse: "Переглянути папки",

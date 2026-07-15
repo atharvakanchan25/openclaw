@@ -499,6 +499,7 @@ export const pl: TranslationMap = {
       "Workery chmurowe wymagają bezpiecznego kontekstu przeglądarki, aby mechanizm odzyskiwania mógł chronić Twoje zadanie.",
     cloudStartFailed:
       "Sesja została utworzona lokalnie, ale uruchomienie w chmurze nie powiodło się: {error}",
+    cloudSyncsFolder: "Synchronizuje {folder} z workerem w chmurze",
     folder: "Folder",
     folderPlaceholder: "Obszar roboczy agenta",
     browse: "Przeglądaj foldery",

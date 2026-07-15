@@ -503,6 +503,7 @@ export const de: TranslationMap = {
       "Cloud-Worker benötigen einen sicheren Browserkontext, damit die Wiederherstellung Ihre Aufgabe schützen kann.",
     cloudStartFailed:
       "Die Sitzung wurde lokal erstellt, aber der Cloud-Start ist fehlgeschlagen: {error}",
+    cloudSyncsFolder: "Synchronisiert {folder} mit dem Cloud-Worker",
     folder: "Ordner",
     folderPlaceholder: "Agent-Arbeitsbereich",
     browse: "Ordner durchsuchen",
