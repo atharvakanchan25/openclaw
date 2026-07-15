@@ -1351,6 +1351,7 @@ export type {
   CrestodianSetupAuthStartParams,
   CrestodianSetupAuthStartResult,
   WizardStartParams,
+  WizardAnswer,
   WizardNextParams,
   WizardCancelParams,
   WizardStatusParams,

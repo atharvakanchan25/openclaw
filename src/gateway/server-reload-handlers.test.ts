@@ -334,6 +334,7 @@ function createReloadHandlersForTest(
   reloadPlugins?: Parameters<typeof createGatewayReloadHandlers>[0]["reloadPlugins"],
   stopPostReadySidecars = vi.fn(),
   recovery: boolean | NonNullable<ReloadHandlerParams["requestRecoveryRestart"]> = true,
+  getActiveWizardSessionCount?: () => number,
 ) {
   const cron = { start: vi.fn(async () => {}), stop: vi.fn() };
   const stopExitWatchers = vi.fn();
@@ -386,6 +387,7 @@ function createReloadHandlersForTest(
           ? requestGatewayRestartWithSignalAdmission
           : null,
     ...(typeof recovery === "boolean" ? { restartRecoveryAvailable: recovery } : {}),
+    ...(getActiveWizardSessionCount ? { getActiveWizardSessionCount } : {}),
     createHealthMonitor: () => null,
   });
   return {
@@ -2359,6 +2361,66 @@ describe("gateway restart deferral preflight", () => {
       expect(logReload.info).toHaveBeenCalledWith(
         "all operations and replies completed; restarting gateway now",
       );
+    } finally {
+      process.removeListener("SIGUSR1", signalSpy);
+      restartTesting.resetSigusr1State();
+      resetGatewayWorkAdmission();
+    }
+  });
+
+  it("does not expire config restart deferral while a setup wizard is active", async () => {
+    restartTesting.resetSigusr1State();
+    resetGatewayWorkAdmission();
+    const logReload = { info: vi.fn(), warn: vi.fn() };
+    let activeWizardSessions = 1;
+    const { requestGatewayRestart } = createReloadHandlersForTest(
+      logReload,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      () => activeWizardSessions,
+    );
+    const signalSpy = vi.fn();
+    process.once("SIGUSR1", signalSpy);
+    vi.useFakeTimers();
+
+    try {
+      expect(
+        requestGatewayRestart(
+          {
+            changedPaths: ["plugins.installs.external-chat"],
+            restartGateway: true,
+            restartReasons: ["plugin source changed"],
+            hotReasons: [],
+            reloadHooks: false,
+            restartGmailWatcher: false,
+            restartCron: false,
+            restartHeartbeat: false,
+            restartHealthMonitor: false,
+            reloadPlugins: false,
+            restartChannels: new Set(),
+            disposeMcpRuntimes: false,
+            noopPaths: [],
+          },
+          { gateway: { reload: { deferralTimeoutMs: 500 } } },
+        ).status,
+      ).toBe("accepted");
+      expect(signalSpy).not.toHaveBeenCalled();
+      expect(logReload.warn).toHaveBeenCalledWith(
+        "config change requires gateway restart (plugin source changed) — deferring until 1 setup wizard(s) complete",
+      );
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(signalSpy).not.toHaveBeenCalled();
+      expect(logReload.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("forcing restart"),
+      );
+
+      activeWizardSessions = 0;
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(signalSpy).toHaveBeenCalledOnce();
     } finally {
       process.removeListener("SIGUSR1", signalSpy);
       restartTesting.resetSigusr1State();

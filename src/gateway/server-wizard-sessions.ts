@@ -41,5 +41,15 @@ export function createWizardSessionTracker(options?: { now?: () => number }) {
     terminalSince.delete(id);
   };
 
-  return { wizardSessions, findRunningWizard, purgeWizardSession };
+  const countRunningWizards = () => {
+    let count = 0;
+    for (const session of wizardSessions.values()) {
+      if (session.getStatus() === "running") {
+        count += 1;
+      }
+    }
+    return count;
+  };
+
+  return { wizardSessions, findRunningWizard, purgeWizardSession, countRunningWizards };
 }

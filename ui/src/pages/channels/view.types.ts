@@ -15,6 +15,7 @@ import type {
 } from "../../api/types.ts";
 import type { NostrProfileFormState } from "./view.nostr-profile-form.ts";
 import type { ChannelWizardState } from "./wizard-controller.ts";
+import type { ChannelWizardNavigationDirection } from "./wizard-controller.ts";
 
 export type ChannelKey = string;
 
@@ -44,6 +45,7 @@ export type ChannelsProps = {
   onCloseDetail: () => void;
   onStartSetup: (channelId: string | null) => void;
   onWizardAnswer: (value: unknown) => void;
+  onWizardNavigate: (direction: ChannelWizardNavigationDirection) => void;
   onWizardToggleMultiselect: (value: unknown) => void;
   onWizardClose: () => void;
   onRefresh: (probe: boolean) => void;

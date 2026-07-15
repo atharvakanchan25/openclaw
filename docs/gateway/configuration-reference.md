@@ -740,7 +740,7 @@ See [Multiple Gateways](/gateway/multiple-gateways).
   - `"hot"`: apply changes in-process without restarting.
   - `"hybrid"` (default): try hot reload first; fall back to restart if required.
 - `debounceMs`: debounce window in ms before config changes are applied (non-negative integer; default: `300`).
-- `deferralTimeoutMs`: optional maximum time in ms to wait for in-flight operations before forcing a restart or channel hot reload. Omit it to use the default bounded wait (`300000`); set `0` to wait indefinitely and log periodic still-pending warnings.
+- `deferralTimeoutMs`: optional maximum time in ms to wait for ordinary in-flight operations before forcing a restart or channel hot reload. Omit it to use the default bounded wait (`300000`); set `0` to wait indefinitely and log periodic still-pending warnings. An active Gateway setup wizard is protected beyond this deadline so a config reload cannot interrupt setup; abandoned wizard sessions expire after 30 minutes.
 
 ---
 

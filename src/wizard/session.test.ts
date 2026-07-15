@@ -1,5 +1,6 @@
 // Wizard session tests cover session creation and state transitions.
 import { describe, expect, test, vi } from "vitest";
+import { runWizardWithPromptNavigationScope } from "./navigation-prompter.js";
 import { WizardSession } from "./session.js";
 
 function noteRunner() {
@@ -176,7 +177,39 @@ describe("WizardSession", () => {
     expect(session.signal.aborted).toBe(true);
   });
 
-  test("refuses cancellation after the durable commit point", async () => {
+  test("reports a saved channels result with no configured accounts", async () => {
+    const session = new WizardSession(async (_prompter, _signal, currentSession) => {
+      currentSession.setConfiguredResult({ accounts: [], changed: true });
+    });
+
+    await expect(session.next()).resolves.toMatchObject({
+      done: true,
+      status: "done",
+      changed: true,
+      channels: [],
+      accounts: [],
+    });
+  });
+
+  test("retains a saved channels result after cancellation", async () => {
+    const session = new WizardSession(async (prompter, _signal, currentSession) => {
+      currentSession.setConfiguredResult({ accounts: [], changed: true });
+      await prompter.text({ message: "Continue setup" });
+    });
+
+    expect((await session.next()).step?.type).toBe("text");
+    session.cancel();
+
+    expect(session.getConfiguredResult()).toEqual({ accounts: [], changed: true });
+    await expect(session.next()).resolves.toMatchObject({
+      status: "cancelled",
+      changed: true,
+      channels: [],
+      accounts: [],
+    });
+  });
+
+  test("queues cancellation until the durable operation finishes", async () => {
     let finish!: () => void;
     const gate = new Promise<void>((resolve) => {
       finish = resolve;
@@ -191,7 +224,69 @@ describe("WizardSession", () => {
     expect(session.signal.aborted).toBe(false);
 
     finish();
-    expect((await session.next()).status).toBe("done");
+    expect((await session.next()).status).toBe("cancelled");
+  });
+
+  test("releases the durable-operation lock at the next interactive prompt", async () => {
+    let finishEffect!: () => void;
+    const effect = new Promise<void>((resolve) => {
+      finishEffect = resolve;
+    });
+    const session = new WizardSession(async (prompter) => {
+      await effect;
+      await prompter.text({ message: "Continue setup" });
+    });
+
+    session.lockCancellation();
+    finishEffect();
+    expect((await session.next()).step?.type).toBe("text");
+    expect(session.cancel()).toBe(true);
+    expect((await session.next()).status).toBe("cancelled");
+  });
+
+  test("honors cancellation requested during a durable operation at the next prompt", async () => {
+    let finishEffect!: () => void;
+    const effect = new Promise<void>((resolve) => {
+      finishEffect = resolve;
+    });
+    const session = new WizardSession(async (prompter) => {
+      await effect;
+      await prompter.text({ message: "Continue setup" });
+    });
+
+    session.lockCancellation();
+    expect(session.cancel()).toBe(false);
+    finishEffect();
+
+    const done = await session.next();
+    expect(done.done).toBe(true);
+    expect(done.status).toBe("cancelled");
+  });
+
+  test("keeps cancellation locked across presentation notes until durable work finishes", async () => {
+    let finishEffect!: () => void;
+    let effectContinued = false;
+    const effect = new Promise<void>((resolve) => {
+      finishEffect = resolve;
+    });
+    const session = new WizardSession(async (prompter, _signal, currentSession) => {
+      currentSession.lockCancellation();
+      await prompter.note("Scan this QR code");
+      effectContinued = true;
+      await effect;
+      currentSession.setConfiguredResult({ accounts: [], changed: true });
+    });
+
+    expect((await session.next()).step?.type).toBe("note");
+    expect(session.cancel()).toBe(false);
+    await vi.waitFor(() => expect(effectContinued).toBe(true));
+    expect(session.getStatus()).toBe("running");
+
+    finishEffect();
+    await expect(session.next()).resolves.toMatchObject({
+      status: "cancelled",
+      changed: true,
+    });
   });
 
   test("expires an abandoned interactive session", async () => {
@@ -210,6 +305,59 @@ describe("WizardSession", () => {
       const done = await session.next();
       expect(done.status).toBe("cancelled");
       expect(session.signal.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("restarts the abandonment timeout after accepted client activity", async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new WizardSession(
+        async (prompter) => {
+          await prompter.text({ message: "Name" });
+          await prompter.text({ message: "Account" });
+        },
+        { timeoutMs: 1_000 },
+      );
+
+      const first = await session.next();
+      if (!first.step) {
+        throw new Error("expected first step");
+      }
+      await vi.advanceTimersByTimeAsync(900);
+      await session.answer(first.step.id, "Peter");
+      expect((await session.next()).step?.message).toBe("Account");
+
+      await vi.advanceTimersByTimeAsync(900);
+      expect(session.getStatus()).toBe("running");
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await session.next()).status).toBe("cancelled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("hard-expires a cancellation-locked operation", async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    try {
+      const gate = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const session = new WizardSession(
+        async (_prompter, _signal, currentSession) => {
+          currentSession.lockCancellation();
+          await gate;
+        },
+        { timeoutMs: 1_000 },
+      );
+
+      expect(session.cancel()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(session.getStatus()).toBe("cancelled");
+      expect(session.signal.aborted).toBe(true);
+      finish();
     } finally {
       vi.useRealTimers();
     }
@@ -271,5 +419,43 @@ describe("WizardSession", () => {
       throw new Error("expected plain step");
     }
     await session.answer(plainStep.id, "alice");
+  });
+
+  test("carries prompt navigation and turns a client Back action into navigation", async () => {
+    let outcome: Awaited<ReturnType<typeof runWizardWithPromptNavigationScope<string>>> | undefined;
+    const session = new WizardSession(async (prompter) => {
+      outcome = await runWizardWithPromptNavigationScope(
+        prompter,
+        async (scopedPrompter) => await scopedPrompter.text({ message: "Token" }),
+      );
+    });
+
+    const step = (await session.next()).step;
+    expect(step).toMatchObject({
+      type: "text",
+      navigation: { canGoBack: true, canGoForward: false },
+    });
+    if (!step) {
+      throw new Error("expected text step");
+    }
+
+    await session.navigate(step.id, "back");
+    expect((await session.next()).status).toBe("done");
+    expect(outcome).toEqual({ status: "back" });
+  });
+
+  test("rejects navigation actions not advertised by the current step", async () => {
+    const session = new WizardSession(async (prompter) => {
+      await prompter.text({ message: "Token" });
+    });
+    const step = (await session.next()).step;
+    if (!step) {
+      throw new Error("expected text step");
+    }
+
+    await expect(session.navigate(step.id, "back")).rejects.toThrow(
+      "wizard: navigation back unavailable",
+    );
+    expect((await session.next()).step?.id).toBe(step.id);
   });
 });

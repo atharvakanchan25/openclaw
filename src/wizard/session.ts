@@ -1,44 +1,25 @@
 // Wizard session helpers track onboarding session ids and state.
 import { randomUUID } from "node:crypto";
+import type {
+  WizardNextResult as GatewayWizardNextResult,
+  WizardStep as GatewayWizardStep,
+} from "../../packages/gateway-protocol/src/schema/wizard.js";
 import { createDeferred, type Deferred } from "../shared/deferred.js";
-import { WizardCancelledError, type WizardProgress, type WizardPrompter } from "./prompts.js";
+import {
+  WizardCancelledError,
+  WizardNavigationError,
+  type WizardProgress,
+  type WizardPrompter,
+} from "./prompts.js";
 
 // WizardSession exposes interactive setup as a step/answer protocol for remote
 // clients while reusing the same WizardPrompter contract as the local CLI.
-type WizardStepOption = {
-  value: unknown;
-  label: string;
-  hint?: string;
-};
-
-export type WizardStep = {
-  id: string;
-  type: "note" | "select" | "text" | "confirm" | "multiselect" | "progress" | "action";
-  title?: string;
-  message?: string;
-  format?: "plain";
-  options?: WizardStepOption[];
-  initialValue?: unknown;
-  placeholder?: string;
-  sensitive?: boolean;
-  executor?: "gateway" | "client";
-  externalUrl?: string;
-  deviceCode?: {
-    code: string;
-    expiresInMinutes?: number;
-    message?: string;
-  };
-};
+export type WizardStep = GatewayWizardStep;
 
 type WizardSessionStatus = "running" | "done" | "cancelled" | "error";
 
-type WizardNextResult = {
-  done: boolean;
-  step?: WizardStep;
+type WizardNextResult = Omit<GatewayWizardNextResult, "status"> & {
   status: WizardSessionStatus;
-  error?: string;
-  channels?: string[];
-  accounts?: Array<{ channel: string; accountId: string }>;
 };
 
 function normalizeTextAnswer(value: unknown): string | undefined {
@@ -109,11 +90,7 @@ class WizardSessionPrompter implements WizardPrompter {
     await this.prompt({ type: "note", message, format: "plain", executor: "client" });
   }
 
-  async select<T>(params: {
-    message: string;
-    options: Array<{ value: T; label: string; hint?: string }>;
-    initialValue?: T;
-  }): Promise<T> {
+  async select<T>(params: Parameters<WizardPrompter["select"]>[0]): Promise<T> {
     const res = await this.prompt({
       type: "select",
       message: params.message,
@@ -123,16 +100,13 @@ class WizardSessionPrompter implements WizardPrompter {
         hint: opt.hint,
       })),
       initialValue: params.initialValue,
+      navigation: params.navigation,
       executor: "client",
     });
     return res as T;
   }
 
-  async multiselect<T>(params: {
-    message: string;
-    options: Array<{ value: T; label: string; hint?: string }>;
-    initialValues?: T[];
-  }): Promise<T[]> {
+  async multiselect<T>(params: Parameters<WizardPrompter["multiselect"]>[0]): Promise<T[]> {
     const res = await this.prompt({
       type: "multiselect",
       message: params.message,
@@ -142,18 +116,13 @@ class WizardSessionPrompter implements WizardPrompter {
         hint: opt.hint,
       })),
       initialValue: params.initialValues,
+      navigation: params.navigation,
       executor: "client",
     });
     return (Array.isArray(res) ? res : []) as T[];
   }
 
-  async text(params: {
-    message: string;
-    initialValue?: string;
-    placeholder?: string;
-    validate?: (value: string) => string | undefined;
-    sensitive?: boolean;
-  }): Promise<string> {
+  async text(params: Parameters<WizardPrompter["text"]>[0]): Promise<string> {
     const res = await this.session.awaitAnswer(
       this.createStep({
         type: "text",
@@ -161,6 +130,7 @@ class WizardSessionPrompter implements WizardPrompter {
         initialValue: params.initialValue,
         placeholder: params.placeholder,
         sensitive: params.sensitive,
+        navigation: params.navigation,
         executor: "client",
       }),
       params.validate,
@@ -181,6 +151,7 @@ class WizardSessionPrompter implements WizardPrompter {
       type: "confirm",
       message: params.message,
       initialValue: params.initialValue,
+      navigation: params.navigation,
       executor: "client",
     });
     return Boolean(res);
@@ -216,11 +187,13 @@ class WizardSessionPrompter implements WizardPrompter {
 
 export class WizardSession {
   private readonly abortController = new AbortController();
-  private readonly expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  private expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly timeoutMs: number | undefined;
   private currentStep: WizardStep | null = null;
   private stepDeferred: Deferred<WizardStep | null> | null = null;
   private pendingTerminalResolution = false;
   private cancellationLocked = false;
+  private cancellationRequestedWhileLocked = false;
   private pendingExternalUrl: string | undefined;
   private answerDeferred = new Map<
     string,
@@ -232,7 +205,9 @@ export class WizardSession {
   >();
   private status: WizardSessionStatus = "running";
   private error: string | undefined;
-  private configuredAccounts: Array<{ channel: string; accountId: string }> | undefined;
+  private configuredResult:
+    | { accounts: Array<{ channel: string; accountId: string }>; changed: boolean }
+    | undefined;
 
   constructor(
     private runner: (
@@ -243,10 +218,8 @@ export class WizardSession {
     options?: { timeoutMs?: number },
   ) {
     const prompter = new WizardSessionPrompter(this);
-    if (options?.timeoutMs !== undefined) {
-      this.expiryTimer = setTimeout(() => this.cancel(), options.timeoutMs);
-      this.expiryTimer.unref?.();
-    }
+    this.timeoutMs = options?.timeoutMs;
+    this.rearmExpiryTimer();
     void this.run(prompter);
   }
 
@@ -272,21 +245,41 @@ export class WizardSession {
   }
 
   private terminalResult(): WizardNextResult {
-    if (!this.configuredAccounts) {
+    if (!this.configuredResult) {
       return { done: true, status: this.status, error: this.error };
     }
     return {
       done: true,
       status: this.status,
       error: this.error,
-      channels: [...new Set(this.configuredAccounts.map((entry) => entry.channel))],
-      accounts: this.configuredAccounts.map((entry) => ({ ...entry })),
+      changed: this.configuredResult.changed,
+      channels: [...new Set(this.configuredResult.accounts.map((entry) => entry.channel))],
+      accounts: this.configuredResult.accounts.map((entry) => ({ ...entry })),
     };
   }
 
-  /** Record what the channels flow actually configured (channels flow only). */
-  setConfiguredAccounts(accounts: ReadonlyArray<{ channel: string; accountId: string }>) {
-    this.configuredAccounts = accounts.map((entry) => ({ ...entry }));
+  /** Record the saved channels-flow outcome (channels flow only). */
+  setConfiguredResult(result: {
+    accounts: ReadonlyArray<{ channel: string; accountId: string }>;
+    changed: boolean;
+  }) {
+    this.configuredResult = {
+      accounts: result.accounts.map((entry) => ({ ...entry })),
+      changed: result.changed,
+    };
+  }
+
+  /** Read the latest durable channels-flow outcome without exposing mutable session state. */
+  getConfiguredResult():
+    | { accounts: Array<{ channel: string; accountId: string }>; changed: boolean }
+    | undefined {
+    if (!this.configuredResult) {
+      return undefined;
+    }
+    return {
+      accounts: this.configuredResult.accounts.map((entry) => ({ ...entry })),
+      changed: this.configuredResult.changed,
+    };
   }
 
   async answer(stepId: string, value: unknown): Promise<string | undefined> {
@@ -304,12 +297,43 @@ export class WizardSession {
     }
     this.answerDeferred.delete(stepId);
     this.currentStep = null;
+    this.rearmExpiryTimer();
     pending.deferred.resolve(normalizedValue);
     return undefined;
   }
 
+  async navigate(stepId: string, direction: "back" | "forward"): Promise<void> {
+    const pending = this.answerDeferred.get(stepId);
+    if (!pending || this.currentStep?.id !== stepId) {
+      throw new Error("wizard: no pending step");
+    }
+    const allowed =
+      direction === "back"
+        ? this.currentStep.navigation?.canGoBack
+        : this.currentStep.navigation?.canGoForward;
+    if (!allowed) {
+      throw new Error(`wizard: navigation ${direction} unavailable`);
+    }
+    this.answerDeferred.delete(stepId);
+    this.currentStep = null;
+    this.rearmExpiryTimer();
+    pending.deferred.reject(new WizardNavigationError(direction));
+  }
+
   cancel(): boolean {
-    if (this.status !== "running" || this.cancellationLocked) {
+    if (this.status !== "running") {
+      return false;
+    }
+    if (this.cancellationLocked) {
+      this.cancellationRequestedWhileLocked = true;
+      this.acknowledgeLockedPresentationStep();
+      return false;
+    }
+    return this.cancelNow();
+  }
+
+  private cancelNow(): boolean {
+    if (this.status !== "running") {
       return false;
     }
     this.status = "cancelled";
@@ -326,7 +350,15 @@ export class WizardSession {
     return true;
   }
 
-  /** The underlying mutation crossed its durable commit point and must finish. */
+  private expire() {
+    // Expiry is a hard lifecycle bound, unlike an operator close request. A
+    // hung durable call must eventually release restart/reload blockers.
+    this.cancellationLocked = false;
+    this.cancellationRequestedWhileLocked = false;
+    this.cancelNow();
+  }
+
+  /** Protect the current durable operation until it completes or reaches another prompt. */
   lockCancellation() {
     this.cancellationLocked = true;
   }
@@ -354,7 +386,15 @@ export class WizardSession {
     try {
       await this.runner(prompter, this.signal, this);
       if (this.status === "running") {
-        this.status = "done";
+        if (this.cancellationRequestedWhileLocked) {
+          // The durable effect finished without another input prompt. Honor the
+          // queued close only after the runner has persisted its matching state.
+          this.cancellationRequestedWhileLocked = false;
+          this.cancellationLocked = false;
+          this.cancel();
+        } else {
+          this.status = "done";
+        }
       }
     } catch (err) {
       if (this.status !== "running") {
@@ -382,10 +422,36 @@ export class WizardSession {
     if (this.status !== "running") {
       throw new Error("wizard: session not running");
     }
+    if (step.type !== "note") {
+      this.cancellationLocked = false;
+      if (this.cancellationRequestedWhileLocked) {
+        this.cancellationRequestedWhileLocked = false;
+        this.cancel();
+        throw new WizardCancelledError();
+      }
+    } else if (this.cancellationLocked && this.cancellationRequestedWhileLocked) {
+      // The client already closed while a durable effect was running. Notes are
+      // presentation-only, so acknowledge them and let the protected flow reach
+      // its commit/cleanup boundary without waiting for a vanished client.
+      return undefined;
+    }
     this.pushStep(step);
     const deferred = createDeferred<unknown>();
     this.answerDeferred.set(step.id, { deferred, text: step.type === "text", validate });
     return await deferred.promise;
+  }
+
+  private acknowledgeLockedPresentationStep() {
+    if (this.currentStep?.type !== "note") {
+      return;
+    }
+    const pending = this.answerDeferred.get(this.currentStep.id);
+    if (!pending) {
+      return;
+    }
+    this.answerDeferred.delete(this.currentStep.id);
+    this.currentStep = null;
+    pending.deferred.resolve(undefined);
   }
 
   private resolveStep(step: WizardStep | null) {
@@ -400,6 +466,18 @@ export class WizardSession {
     const deferred = this.stepDeferred;
     this.stepDeferred = null;
     deferred.resolve(step);
+  }
+
+  private rearmExpiryTimer() {
+    if (this.expiryTimer) {
+      clearTimeout(this.expiryTimer);
+    }
+    if (this.timeoutMs === undefined || this.status !== "running") {
+      this.expiryTimer = undefined;
+      return;
+    }
+    this.expiryTimer = setTimeout(() => this.expire(), this.timeoutMs);
+    this.expiryTimer.unref?.();
   }
 
   getStatus(): WizardSessionStatus {

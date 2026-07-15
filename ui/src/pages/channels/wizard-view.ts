@@ -8,6 +8,7 @@ import "../../components/modal-dialog.ts";
 import { channelDocsUrl, channelHubMeta, renderChannelArt } from "./hub-meta.ts";
 import type {
   ChannelWizardState,
+  ChannelWizardNavigationDirection,
   ChannelWizardStep,
   ChannelWizardStepOption,
 } from "./wizard-controller.ts";
@@ -19,6 +20,7 @@ type ChannelWizardViewProps = {
   multiselectValues: readonly unknown[];
   onToggleMultiselect: (value: unknown) => void;
   onAnswer: (value: unknown) => void;
+  onNavigate: (direction: ChannelWizardNavigationDirection) => void;
   onClose: () => void;
   // WhatsApp QR linking phase (wizard done + channel === whatsapp).
   whatsappQrDataUrl: string | null;
@@ -31,6 +33,28 @@ type ChannelWizardViewProps = {
 
 function stepKeyboardValue(step: ChannelWizardStep): string {
   return typeof step.initialValue === "string" ? step.initialValue : "";
+}
+
+function renderBackButton(step: ChannelWizardStep, props: ChannelWizardViewProps) {
+  if (!step.navigation?.canGoBack) {
+    return nothing;
+  }
+  return html`
+    <button type="button" class="btn" @click=${() => props.onNavigate("back")}>
+      ${t("common.back")}
+    </button>
+  `;
+}
+
+function renderForwardButton(step: ChannelWizardStep, props: ChannelWizardViewProps) {
+  if (!step.navigation?.canGoForward) {
+    return nothing;
+  }
+  return html`
+    <button type="button" class="btn primary" @click=${() => props.onNavigate("forward")}>
+      ${t("channels.setup.continue")}
+    </button>
+  `;
 }
 
 function renderNoteStep(step: ChannelWizardStep, props: ChannelWizardViewProps) {
@@ -59,6 +83,7 @@ function renderNoteStep(step: ChannelWizardStep, props: ChannelWizardViewProps) 
         `
       : nothing}
     <div class="channels-wizard__footer">
+      ${renderBackButton(step, props)}
       <button type="button" class="btn primary" @click=${() => props.onAnswer(null)}>
         ${t("channels.setup.continue")}
       </button>
@@ -100,6 +125,11 @@ function renderSelectStep(step: ChannelWizardStep, props: ChannelWizardViewProps
         `,
       )}
     </wa-radio-group>
+    ${step.navigation?.canGoBack || step.navigation?.canGoForward
+      ? html`<div class="channels-wizard__footer">
+          ${renderBackButton(step, props)} ${renderForwardButton(step, props)}
+        </div>`
+      : nothing}
   `;
 }
 
@@ -128,6 +158,7 @@ function renderMultiselectStep(step: ChannelWizardStep, props: ChannelWizardView
       )}
     </div>
     <div class="channels-wizard__footer">
+      ${renderBackButton(step, props)}
       <button
         type="button"
         class="btn primary"
@@ -159,6 +190,7 @@ function renderTextStep(step: ChannelWizardStep, props: ChannelWizardViewProps) 
         .value=${stepKeyboardValue(step)}
       />
       <div class="channels-wizard__footer" style="margin-top: 12px;">
+        ${renderBackButton(step, props)}
         <button type="submit" class="btn primary">${t("channels.setup.continue")}</button>
       </div>
     </form>
@@ -169,6 +201,7 @@ function renderConfirmStep(step: ChannelWizardStep, props: ChannelWizardViewProp
   return html`
     <div class="channels-wizard__message">${step.message ?? ""}</div>
     <div class="channels-wizard__footer">
+      ${renderBackButton(step, props)}
       <button type="button" class="btn" @click=${() => props.onAnswer(false)}>
         ${t("common.no")}
       </button>
@@ -253,11 +286,15 @@ function renderWhatsAppLinking(props: ChannelWizardViewProps) {
   `;
 }
 
-function renderDoneBody(channels: readonly string[], props: ChannelWizardViewProps) {
+function renderDoneBody(
+  channels: readonly string[],
+  changed: boolean,
+  props: ChannelWizardViewProps,
+) {
   if (channels.includes("whatsapp")) {
     return renderWhatsAppLinking(props);
   }
-  if (channels.length === 0) {
+  if (!changed) {
     return html`
       <div class="channels-wizard__message">${t("channels.setup.doneNoChangesTitle")}</div>
       <div class="channels-wizard__note">${t("channels.setup.doneNoChangesBody")}</div>
@@ -327,7 +364,7 @@ export function renderChannelWizard(
       </div>
     `;
   } else if (wizard.phase === "done") {
-    body = renderDoneBody(wizard.channels, props);
+    body = renderDoneBody(wizard.channels, wizard.changed, props);
   } else if (step) {
     body = html`
       ${wizard.phase === "step" && wizard.validationError

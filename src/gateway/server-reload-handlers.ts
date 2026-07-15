@@ -362,6 +362,7 @@ type GatewayReloadHandlerParams = {
   onCronRestart?: () => void;
   requestRecoveryRestart?: GatewayRestartEmitter;
   restartRecoveryAvailable?: boolean;
+  getActiveWizardSessionCount?: () => number;
 };
 
 type ManagedGatewayConfigReloaderParams = Omit<
@@ -414,6 +415,7 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
     const backgroundExecSessions = getActiveBackgroundExecSessionCount();
     const rootRequests = getActiveGatewayRootWorkCount({ excludeCurrent: true });
     const activeTasks = getInspectableActiveTaskRestartBlockers().length;
+    const wizardSessions = params.getActiveWizardSessionCount?.() ?? 0;
     return {
       queueSize,
       pendingReplies,
@@ -421,13 +423,15 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
       backgroundExecSessions,
       rootRequests,
       activeTasks,
+      wizardSessions,
       totalActive:
         queueSize +
         pendingReplies +
         embeddedRuns +
         backgroundExecSessions +
         rootRequests +
-        activeTasks,
+        activeTasks +
+        wizardSessions,
     };
   };
   const formatActiveDetails = (counts: ReturnType<typeof getActiveCounts>) => {
@@ -449,6 +453,9 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
     }
     if (counts.activeTasks > 0) {
       details.push(`${counts.activeTasks} background task run(s)`);
+    }
+    if (counts.wizardSessions > 0) {
+      details.push(`${counts.wizardSessions} setup wizard(s)`);
     }
     return details;
   };
@@ -509,7 +516,13 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
         return false;
       }
       const elapsedMs = Date.now() - startedAt;
-      if (timeoutMs !== undefined && elapsedMs >= timeoutMs) {
+      // A channel reload would tear down transport state owned by the wizard.
+      // Other work remains bounded, but setup sessions must reach a terminal state.
+      if (
+        timeoutMs !== undefined &&
+        elapsedMs >= timeoutMs &&
+        current.wizardSessions === 0
+      ) {
         const remaining = formatActiveDetails(current);
         params.logReload.warn(
           `channel reload timeout after ${elapsedMs}ms with ${remaining.join(
@@ -1377,6 +1390,9 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
       let failedEmission: { reason: string; intent?: GatewayRestartIntent } | undefined;
       restartDeferral = deferGatewayRestartUntilIdle({
         getPendingCount: () => getActiveCounts().totalActive,
+        // Installing a plugin can request a restart before later setup prompts.
+        // Never let the generic timeout terminate that in-memory wizard session.
+        shouldForceOnTimeout: () => getActiveCounts().wizardSessions === 0,
         maxWaitMs: resolveGatewayRestartDeferralTimeoutMs(
           nextConfig.gateway?.reload?.deferralTimeoutMs,
         ),

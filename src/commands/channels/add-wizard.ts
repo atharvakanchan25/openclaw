@@ -1,6 +1,7 @@
 // Guided channel-setup wizard flow shared by `openclaw channels add` (clack
 // prompter) and the gateway `wizard.start {flow:"channels"}` RPC (session
 // prompter driving the Control UI / native clients).
+import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { getLoadedChannelPlugin } from "../../channels/plugins/index.js";
@@ -16,6 +17,11 @@ import type { ChannelChoice } from "../onboard-types.js";
 import { applyAccountName } from "./add-mutators.js";
 
 type OnboardChannelsModule = typeof import("../onboard-channels.js");
+
+export type ChannelsSetupCompletion = {
+  accounts: Array<{ channel: string; accountId: string }>;
+  changed: boolean;
+};
 
 async function loadOnboardChannels(): Promise<OnboardChannelsModule> {
   return await import("../onboard-channels.js");
@@ -61,8 +67,8 @@ type ChannelsAddWizardFlowParams = {
    * setup surfaces must skip terminal-interactive login flows.
    */
   deferDeviceLinkToClient?: boolean;
-  /** Reports the channel accounts actually configured, after config commit. */
-  onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
+  /** Reports the saved outcome after config commit. */
+  onConfigured?: (result: ChannelsSetupCompletion) => void;
 };
 
 /** Run the interactive channel-setup flow and persist the resulting config. */
@@ -73,8 +79,11 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
     loadOnboardChannels(),
   ]);
   const postWriteHooks = onboardChannels.createChannelOnboardingPostWriteHookCollector();
+  let currentBaseHash = baseHash;
+  let persistedPluginInstall = false;
   let selection: ChannelChoice[] = [];
   const accountIds: Partial<Record<ChannelChoice, string>> = {};
+  const configuredAccounts = new Map<ChannelChoice, string>();
   const resolvedPlugins = new Map<ChannelChoice, ChannelSetupPlugin>();
   await prompter.intro("Channel setup");
   let nextConfig = await onboardChannels.setupChannels(cfg, runtime, prompter, {
@@ -85,6 +94,44 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
     ...(params.beforePersistentEffect
       ? { beforePersistentEffect: params.beforePersistentEffect }
       : {}),
+    onPluginInstalled: async (installedConfig) => {
+      await params.beforePersistentEffect?.();
+      const committed = await commitConfigWithPendingPluginInstalls({
+        nextConfig: installedConfig,
+        ...(currentBaseHash !== undefined ? { baseHash: currentBaseHash } : {}),
+      });
+      currentBaseHash = committed.persistedHash ?? undefined;
+      persistedPluginInstall = true;
+      // Record the durable outcome before fallible registry repair or post-write
+      // hooks so cancellation/error responses cannot hide a successful commit.
+      params.onConfigured?.({
+        accounts: Array.from(configuredAccounts, ([channel, accountId]) => ({
+          channel,
+          accountId,
+        })),
+        changed: true,
+      });
+      if (committed.movedInstallRecords) {
+        await refreshPluginRegistryAfterConfigMutation({
+          config: committed.config,
+          reason: "source-changed",
+          installRecords: committed.installRecords,
+          logger: { warn: (message) => runtime.log(message) },
+        });
+      }
+      // This commit can include channel config collected before the package
+      // install. Run its queued hooks now so cancellation cannot strand saved
+      // config without the matching post-write initialization.
+      await onboardChannels.runCollectedChannelOnboardingPostWriteHooks({
+        hooks: postWriteHooks.drain(),
+        cfg: committed.config,
+        runtime,
+        ...(params.beforePersistentEffect
+          ? { beforePersistentEffect: params.beforePersistentEffect }
+          : {}),
+      });
+      return committed.config;
+    },
     ...(params.deferDeviceLinkToClient ? { deferDeviceLinkToClient: true } : {}),
     onPostWriteHook: (hook) => {
       postWriteHooks.collect(hook);
@@ -98,19 +145,24 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
     onAccountId: (channel, accountId) => {
       accountIds[channel] = accountId;
     },
+    onConfiguredAccount: (channel, accountId) => {
+      configuredAccounts.set(channel, accountId);
+    },
     onResolvedPlugin: (channel, plugin) => {
       resolvedPlugins.set(channel, plugin);
     },
   });
-  if (selection.length === 0) {
+  if (selection.length === 0 && !persistedPluginInstall && isDeepStrictEqual(nextConfig, cfg)) {
     await prompter.outro("No channel changes made.");
     return;
   }
 
-  const wantsNames = await prompter.confirm({
-    message: "Name these channel accounts now? (optional)",
-    initialValue: false,
-  });
+  const wantsNames =
+    selection.length > 0 &&
+    (await prompter.confirm({
+      message: "Name these channel accounts now? (optional)",
+      initialValue: false,
+    }));
   if (wantsNames) {
     for (const channel of selection) {
       const accountId = accountIds[channel] ?? DEFAULT_ACCOUNT_ID;
@@ -201,7 +253,7 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
   await params.beforePersistentEffect?.();
   const committed = await commitConfigWithPendingPluginInstalls({
     nextConfig,
-    ...(baseHash !== undefined ? { baseHash } : {}),
+    ...(currentBaseHash !== undefined ? { baseHash: currentBaseHash } : {}),
   });
   const writtenConfig = committed.config;
   if (committed.movedInstallRecords) {
@@ -220,12 +272,13 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
       ? { beforePersistentEffect: params.beforePersistentEffect }
       : {}),
   });
-  params.onConfigured?.(
-    selection.map((channel) => ({
+  params.onConfigured?.({
+    accounts: selection.map((channel) => ({
       channel,
       accountId: accountIds[channel] ?? DEFAULT_ACCOUNT_ID,
     })),
-  );
+    changed: true,
+  });
   await prompter.outro("Channels updated.");
 }
 
@@ -236,7 +289,7 @@ export async function runChannelsAddWizardFlow(params: ChannelsAddWizardFlowPara
 export async function runChannelsSetupWizard(
   opts: {
     channel?: string;
-    onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
+    onConfigured?: (result: ChannelsSetupCompletion) => void;
     /** Revalidate/lock cancellation immediately before durable effects. */
     beforePersistentEffect?: () => Promise<void>;
   },

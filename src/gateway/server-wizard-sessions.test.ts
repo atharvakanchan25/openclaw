@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WizardSession } from "../wizard/session.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 
@@ -30,7 +30,30 @@ describe("createWizardSessionTracker", () => {
     tracker.wizardSessions.set("running", running);
 
     expect(tracker.findRunningWizard()).toBe("running");
+    expect(tracker.countRunningWizards()).toBe(1);
     expect(tracker.wizardSessions.get("running")).toBe(running);
     running.cancel();
+    expect(tracker.countRunningWizards()).toBe(0);
+  });
+
+  it("releases an abandoned timed-out wizard from the running count", async () => {
+    vi.useFakeTimers();
+    try {
+      const tracker = createWizardSessionTracker();
+      const abandoned = new WizardSession(
+        async (prompter) => {
+          await prompter.text({ message: "Waiting for client" });
+        },
+        { timeoutMs: 1_000 },
+      );
+      tracker.wizardSessions.set("abandoned", abandoned);
+      await abandoned.next();
+
+      expect(tracker.countRunningWizards()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(tracker.countRunningWizards()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

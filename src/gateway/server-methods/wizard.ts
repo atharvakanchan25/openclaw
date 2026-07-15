@@ -10,6 +10,8 @@ import {
   validateWizardStartParams,
   validateWizardStatusParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import type { WizardAnswer } from "../../../packages/gateway-protocol/src/schema/wizard.js";
+import type { ChannelsSetupCompletion } from "../../commands/channels/add-wizard.js";
 import type { OnboardOptions } from "../../commands/onboard-types.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
@@ -17,6 +19,10 @@ import { WizardSession } from "../../wizard/session.js";
 import { formatForLog } from "../ws-log.js";
 import type { GatewayRequestContext, GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
+
+// Gateway wizard sessions are restart blockers while running. Bound abandoned
+// clients without cutting off normal pauses beyond the default reload timeout.
+const GATEWAY_WIZARD_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 export type SetupWizardRunner = (
   opts: OnboardOptions,
@@ -27,7 +33,7 @@ export type SetupWizardRunner = (
 export type ChannelSetupWizardRunner = (
   opts: {
     channel?: string;
-    onConfigured?: (accounts: Array<{ channel: string; accountId: string }>) => void;
+    onConfigured?: (result: ChannelsSetupCompletion) => void;
     beforePersistentEffect?: () => Promise<void>;
   },
   runtime: RuntimeEnv,
@@ -45,9 +51,17 @@ export const runDefaultChannelSetupWizard: ChannelSetupWizardRunner = async (...
 };
 
 function readWizardStatus(session: WizardSession) {
+  const configured = session.getConfiguredResult();
   return {
     status: session.getStatus(),
     error: session.getError(),
+    ...(configured
+      ? {
+          changed: configured.changed,
+          channels: [...new Set(configured.accounts.map((entry) => entry.channel))],
+          accounts: configured.accounts,
+        }
+      : {}),
   };
 }
 
@@ -80,28 +94,32 @@ export const wizardHandlers: GatewayRequestHandlers = {
     const flow = params.flow ?? "setup";
     const session =
       flow === "channels"
-        ? new WizardSession((prompter, _signal, wizardSession) =>
-            context.channelWizardRunner(
-              {
-                channel: readStringValue(params.channel),
-                onConfigured: (accounts) => wizardSession.setConfiguredAccounts(accounts),
-                // Durable effects (plugin installs, config commit) must finish
-                // even if the client cancels mid-write.
-                beforePersistentEffect: async () => wizardSession.lockCancellation(),
-              },
-              defaultRuntime,
-              prompter,
-            ),
+        ? new WizardSession(
+            (prompter, _signal, wizardSession) =>
+              context.channelWizardRunner(
+                {
+                  channel: readStringValue(params.channel),
+                  onConfigured: (result) => wizardSession.setConfiguredResult(result),
+                  // Durable effects (plugin installs, config commit) must finish
+                  // even if the client cancels mid-write.
+                  beforePersistentEffect: async () => wizardSession.lockCancellation(),
+                },
+                defaultRuntime,
+                prompter,
+              ),
+            { timeoutMs: GATEWAY_WIZARD_SESSION_TIMEOUT_MS },
           )
-        : new WizardSession((prompter) =>
-            context.wizardRunner(
-              {
-                mode: params.mode,
-                workspace: readStringValue(params.workspace),
-              },
-              defaultRuntime,
-              prompter,
-            ),
+        : new WizardSession(
+            (prompter) =>
+              context.wizardRunner(
+                {
+                  mode: params.mode,
+                  workspace: readStringValue(params.workspace),
+                },
+                defaultRuntime,
+                prompter,
+              ),
+            { timeoutMs: GATEWAY_WIZARD_SESSION_TIMEOUT_MS },
           );
     context.wizardSessions.set(sessionId, session);
     const result = await session.next();
@@ -121,17 +139,21 @@ export const wizardHandlers: GatewayRequestHandlers = {
     if (!session) {
       return;
     }
-    const answer = params.answer as { stepId?: string; value?: unknown } | undefined;
+    const answer = params.answer as WizardAnswer | undefined;
     if (answer) {
       if (session.getStatus() !== "running") {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "wizard not running"));
         return;
       }
       try {
-        const validationError = await session.answer(answer.stepId ?? "", answer.value);
-        if (validationError) {
-          respond(true, { ...(await session.next()), error: validationError }, undefined);
-          return;
+        if (answer.navigation) {
+          await session.navigate(answer.stepId, answer.navigation);
+        } else {
+          const validationError = await session.answer(answer.stepId, answer.value);
+          if (validationError) {
+            respond(true, { ...(await session.next()), error: validationError }, undefined);
+            return;
+          }
         }
       } catch (err) {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, formatForLog(err)));

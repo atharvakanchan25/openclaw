@@ -18,6 +18,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetAgentEventsForTest } from "../infra/agent-events.js";
 import { clearGatewaySubagentRuntime } from "../plugins/runtime/gateway-bindings.test-fixtures.js";
 import { captureEnv, deleteTestEnvValue, setTestEnvValue } from "../test-utils/env.js";
+import { runWizardWithPromptNavigationScope } from "../wizard/navigation-prompter.js";
 import { startGatewayServer } from "./server.js";
 import {
   connectDeviceAuthReq,
@@ -809,12 +810,26 @@ module.exports = {
         channelWizardRunner: async (opts, _runtime, prompter) => {
           channelRuns.push(opts.channel);
           await prompter.intro("Channel setup");
-          const choice = await prompter.select({
-            message: "channel",
-            options: [{ value: opts.channel ?? "none", label: opts.channel ?? "none" }],
-          });
-          opts.onConfigured?.([{ channel: choice, accountId: "default" }]);
-          await prompter.outro(`configured ${choice}`);
+          while (true) {
+            const choice = await prompter.select({
+              message: "channel",
+              options: [{ value: opts.channel ?? "none", label: opts.channel ?? "none" }],
+            });
+            const setup = await runWizardWithPromptNavigationScope(
+              prompter,
+              async (scopedPrompter) =>
+                await scopedPrompter.text({ message: `token for ${choice}` }),
+            );
+            if (setup.status === "back") {
+              continue;
+            }
+            opts.onConfigured?.({
+              accounts: [{ channel: choice, accountId: "default" }],
+              changed: true,
+            });
+            await prompter.outro(`configured ${choice}`);
+            return;
+          }
         },
       });
 
@@ -829,7 +844,12 @@ module.exports = {
           sessionId?: string;
           done: boolean;
           status: "running" | "done" | "cancelled" | "error";
-          step?: { id: string; type: string };
+          step?: {
+            id: string;
+            type: string;
+            message?: string;
+            navigation?: { canGoBack?: boolean; canGoForward?: boolean };
+          };
           channels?: string[];
           accounts?: Array<{ channel: string; accountId: string }>;
         }>("wizard.start", { flow: "channels", channel: "telegram" });
@@ -838,23 +858,36 @@ module.exports = {
 
         let next = start;
         const seenSteps: string[] = [];
+        let usedBack = false;
         while (!next.done) {
           const step = next.step;
           if (!step) {
             throw new Error("wizard missing step");
           }
           seenSteps.push(step.type);
+          const navigateBack = step.message === "token for telegram" && !usedBack;
+          if (navigateBack) {
+            expect(step.navigation).toEqual({ canGoBack: true, canGoForward: false });
+          }
+          usedBack ||= navigateBack;
           next = await client.request(
             "wizard.next",
             {
               sessionId,
-              answer: { stepId: step.id, value: step.type === "select" ? "telegram" : null },
+              answer: navigateBack
+                ? { stepId: step.id, navigation: "back" }
+                : {
+                    stepId: step.id,
+                    value: step.type === "select" ? "telegram" : "fake-token",
+                  },
             },
             { timeoutMs: 60_000 },
           );
         }
 
         expect(next.status, `seenSteps=${seenSteps.join(",")}`).toBe("done");
+        expect(usedBack).toBe(true);
+        expect(seenSteps.filter((type) => type === "select")).toHaveLength(2);
         expect(seenSteps).toContain("select");
         expect(channelRuns).toEqual(["telegram"]);
         expect(next.channels).toEqual(["telegram"]);

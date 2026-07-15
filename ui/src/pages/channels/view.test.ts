@@ -37,6 +37,7 @@ function createProps(snapshot: ChannelsProps["snapshot"]): ChannelsProps {
     onCloseDetail: () => {},
     onStartSetup: () => {},
     onWizardAnswer: () => {},
+    onWizardNavigate: () => {},
     onWizardToggleMultiselect: () => {},
     onWizardClose: () => {},
     onRefresh: () => {},

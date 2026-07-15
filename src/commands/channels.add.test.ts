@@ -20,6 +20,7 @@ import {
 import { baseConfigSnapshot, createTestRuntime } from "./test-runtime-config-helpers.js";
 
 let channelsAddCommand: typeof import("./channels/add.js").channelsAddCommand;
+let runChannelsAddWizardFlow: typeof import("./channels/add-wizard.js").runChannelsAddWizardFlow;
 
 const catalogMocks = vi.hoisted(() => ({
   getChannelPluginCatalogEntry: vi.fn(),
@@ -397,6 +398,7 @@ async function runSignalAddCommand(
 describe("channelsAddCommand", () => {
   beforeAll(async () => {
     ({ channelsAddCommand } = await import("./channels/add.js"));
+    ({ runChannelsAddWizardFlow } = await import("./channels/add-wizard.js"));
   });
 
   beforeEach(async () => {
@@ -476,6 +478,216 @@ describe("channelsAddCommand", () => {
     expect(setupOptions().promptAccountIds).toBe(true);
     expect(configMocks.writeConfigFile).not.toHaveBeenCalled();
     expect(channelWizardMocks.prompter.outro).toHaveBeenCalledWith("No channel changes made.");
+  });
+
+  it("persists an accepted plugin install after setup returns to an empty selection", async () => {
+    const config: OpenClawConfig = { channels: {} };
+    const installedConfig: OpenClawConfig = {
+      ...config,
+      plugins: {
+        entries: { "external-chat": { enabled: true } },
+        installs: {
+          "external-chat": {
+            source: "npm",
+            spec: "@vendor/external-chat@1.0.0",
+          },
+        },
+      },
+    };
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseConfigSnapshot,
+      sourceConfig: config,
+      config,
+    });
+    channelWizardMocks.setupChannels.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[3] as {
+        onPluginInstalled?: (cfg: OpenClawConfig) => Promise<OpenClawConfig>;
+      };
+      return await options.onPluginInstalled!(installedConfig);
+    });
+
+    await channelsAddCommand({}, runtime, { hasFlags: false });
+
+    expect(
+      pluginInstallRecordCommitMocks.commitConfigWithPendingPluginInstalls,
+    ).toHaveBeenCalledWith(expect.objectContaining({ nextConfig: installedConfig }));
+    expect(
+      pluginInstallRecordCommitMocks.commitConfigWithPendingPluginInstalls,
+    ).toHaveBeenCalledTimes(2);
+    expect(configMocks.writeConfigFile).toHaveBeenCalledWith(installedConfig);
+    expect(channelWizardMocks.prompter.confirm).not.toHaveBeenCalled();
+    expect(channelWizardMocks.prompter.outro).toHaveBeenCalledWith("Channels updated.");
+  });
+
+  it("reports a persisted reinstall when the canonical config is unchanged", async () => {
+    const events: string[] = [];
+    const config: OpenClawConfig = {
+      channels: {},
+      plugins: { entries: { "external-chat": { enabled: true } } },
+    };
+    const pendingInstallConfig: OpenClawConfig = {
+      ...config,
+      plugins: {
+        ...config.plugins,
+        installs: {
+          "external-chat": {
+            source: "npm",
+            spec: "@vendor/external-chat@1.0.0",
+          },
+        },
+      },
+    };
+    pluginInstallRecordCommitMocks.commitConfigWithPendingPluginInstalls.mockImplementation(
+      async () => {
+        events.push("commit");
+        return {
+          config,
+          installRecords: {
+            "external-chat": pendingInstallConfig.plugins?.installs?.["external-chat"],
+          },
+          movedInstallRecords: true,
+          persistedHash: "post-install-hash",
+        };
+      },
+    );
+    channelWizardMocks.setupChannels.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[3] as {
+        onPluginInstalled?: (cfg: OpenClawConfig) => Promise<OpenClawConfig>;
+      };
+      events.push("install finished");
+      return await options.onPluginInstalled!(pendingInstallConfig);
+    });
+    const onConfigured = vi.fn();
+
+    await runChannelsAddWizardFlow({
+      cfg: config,
+      runtime,
+      prompter: channelWizardMocks.prompter,
+      onConfigured,
+      beforePersistentEffect: async () => {
+        events.push("authority check");
+      },
+    });
+
+    expect(events.slice(0, 3)).toEqual(["install finished", "authority check", "commit"]);
+    expect(
+      pluginInstallRecordCommitMocks.commitConfigWithPendingPluginInstalls,
+    ).toHaveBeenCalledTimes(2);
+    expect(channelWizardMocks.prompter.outro).toHaveBeenCalledWith("Channels updated.");
+    expect(onConfigured).toHaveBeenCalledWith({ accounts: [], changed: true });
+  });
+
+  it.each(["failed", "cancelled"] as const)(
+    "reports a committed plugin install when later channel setup is %s",
+    async (outcome) => {
+      const { WizardCancelledError } = await import("../wizard/prompts.js");
+      const config: OpenClawConfig = { channels: {} };
+      const installedConfig: OpenClawConfig = {
+        plugins: {
+          entries: { "external-chat": { enabled: true } },
+          installs: {
+            "external-chat": {
+              source: "npm",
+              spec: "@vendor/external-chat@1.0.0",
+            },
+          },
+        },
+      };
+      channelWizardMocks.setupChannels.mockImplementationOnce(async (...args: unknown[]) => {
+        const options = args[3] as {
+          onPluginInstalled?: (cfg: OpenClawConfig) => Promise<OpenClawConfig>;
+        };
+        await options.onPluginInstalled!(installedConfig);
+        throw outcome === "cancelled"
+          ? new WizardCancelledError()
+          : new Error("adapter setup failed");
+      });
+      const onConfigured = vi.fn();
+
+      await expect(
+        runChannelsAddWizardFlow({
+          cfg: config,
+          runtime,
+          prompter: channelWizardMocks.prompter,
+          onConfigured,
+        }),
+      ).rejects.toThrow(outcome === "cancelled" ? "wizard cancelled" : "adapter setup failed");
+
+      expect(onConfigured).toHaveBeenCalledOnce();
+      expect(onConfigured).toHaveBeenCalledWith({ accounts: [], changed: true });
+    },
+  );
+
+  it("runs queued post-write hooks when a plugin install commits earlier channel config", async () => {
+    const config: OpenClawConfig = { channels: {} };
+    const installedConfig: OpenClawConfig = {
+      channels: { matrix: { enabled: true } },
+      plugins: {
+        entries: { "external-chat": { enabled: true } },
+        installs: {
+          "external-chat": {
+            source: "npm",
+            spec: "@vendor/external-chat@1.0.0",
+          },
+        },
+      },
+    };
+    const postWriteHook = vi.fn(async () => undefined);
+    const onConfigured = vi.fn();
+    channelWizardMocks.setupChannels.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[3] as {
+        onPluginInstalled?: (cfg: OpenClawConfig) => Promise<OpenClawConfig>;
+        onConfiguredAccount?: (channel: string, accountId: string) => void;
+        onPostWriteHook?: (hook: {
+          channel: string;
+          accountId: string;
+          run: typeof postWriteHook;
+        }) => void;
+      };
+      options.onConfiguredAccount?.("matrix", "work");
+      options.onPostWriteHook?.({
+        channel: "matrix",
+        accountId: "work",
+        run: postWriteHook,
+      });
+      await options.onPluginInstalled?.(installedConfig);
+      throw new Error("later setup failed");
+    });
+
+    await expect(
+      runChannelsAddWizardFlow({
+        cfg: config,
+        runtime,
+        prompter: channelWizardMocks.prompter,
+        onConfigured,
+      }),
+    ).rejects.toThrow("later setup failed");
+
+    expect(postWriteHook).toHaveBeenCalledOnce();
+    expect(postWriteHook).toHaveBeenCalledWith({ cfg: installedConfig, runtime });
+    expect(onConfigured).toHaveBeenCalledWith({
+      accounts: [{ channel: "matrix", accountId: "work" }],
+      changed: true,
+    });
+  });
+
+  it("reports a persisted config-only change separately from configured accounts", async () => {
+    const config: OpenClawConfig = { channels: {} };
+    const installedConfig: OpenClawConfig = {
+      ...config,
+      plugins: { entries: { "external-chat": { enabled: true } } },
+    };
+    channelWizardMocks.setupChannels.mockResolvedValueOnce(installedConfig);
+    const onConfigured = vi.fn();
+
+    await runChannelsAddWizardFlow({
+      cfg: config,
+      runtime,
+      prompter: channelWizardMocks.prompter,
+      onConfigured,
+    });
+
+    expect(onConfigured).toHaveBeenCalledWith({ accounts: [], changed: true });
   });
 
   it("preselects an installable catalog channel in guided setup", async () => {

@@ -306,7 +306,11 @@ export type SetupChannelsOptions = {
   allowSignalInstall?: boolean;
   /** Revalidate host authority immediately before an installer or other durable effect. */
   beforePersistentEffect?: () => Promise<void>;
+  /** Persist an accepted external install before setup advances to another prompt. */
+  onPluginInstalled?: (cfg: OpenClawConfig) => Promise<OpenClawConfig>;
   onSelection?: (selection: ChannelId[]) => void;
+  /** Reports each configured account as soon as its config joins the working draft. */
+  onConfiguredAccount?: (channel: ChannelId, accountId: string) => void;
   onPostWriteHook?: (hook: ChannelOnboardingPostWriteHook) => void;
   accountIds?: Partial<Record<ChannelId, string>>;
   onAccountId?: (channel: ChannelId, accountId: string) => void;

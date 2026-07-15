@@ -152,6 +152,10 @@
   padding: var(--space-3) var(--space-4) var(--space-4);
 }
 
+.channels-wizard__body :is(.btn, .input) {
+  min-height: 44px;
+}
+
 .channels-wizard__note {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

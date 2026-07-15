@@ -693,6 +693,8 @@ async function emitPreparedGatewayRestart(
  */
 export function deferGatewayRestartUntilIdle(opts: {
   getPendingCount: () => number;
+  /** Keep timeout-based forced restarts blocked while protected work remains. */
+  shouldForceOnTimeout?: () => boolean;
   hooks?: RestartDeferralHooks;
   emitHooks?: RestartEmitHooks;
   pollMs?: number;
@@ -792,7 +794,11 @@ export function deferGatewayRestartUntilIdle(opts: {
       opts.hooks?.onStillPending?.(current, elapsedMs);
       nextStillPendingAt = Date.now() + DEFAULT_DEFERRAL_STILL_PENDING_WARN_MS;
     }
-    if (maxWaitMs !== undefined && elapsedMs >= maxWaitMs) {
+    if (
+      maxWaitMs !== undefined &&
+      elapsedMs >= maxWaitMs &&
+      (opts.shouldForceOnTimeout?.() ?? true)
+    ) {
       stopPoll();
       opts.hooks?.onTimeout?.(current, elapsedMs);
       attemptEmission({

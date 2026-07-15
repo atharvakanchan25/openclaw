@@ -1064,7 +1064,8 @@ export async function startGatewayServer(
     await import("./server-methods/wizard.js");
   const wizardRunner = opts.wizardRunner ?? runDefaultSetupWizard;
   const channelWizardRunner = opts.channelWizardRunner ?? runDefaultChannelSetupWizard;
-  const { wizardSessions, findRunningWizard, purgeWizardSession } = createWizardSessionTracker();
+  const { wizardSessions, findRunningWizard, purgeWizardSession, countRunningWizards } =
+    createWizardSessionTracker();
   const crestodianSessions: GatewayRequestContext["crestodianSessions"] = new Map();
 
   const deps = createDefaultDeps();
@@ -2215,6 +2216,9 @@ export async function startGatewayServer(
       onCronRestart: () => {
         gatewayCronStartHandled = true;
       },
+      // Plugin installation can require a process restart while its setup
+      // wizard still owns in-memory prompts. Defer until that session settles.
+      getActiveWizardSessionCount: countRunningWizards,
       prepareTerminalConfig: (plan, nextConfig) => {
         terminalLaunchPolicy.prepareConfig(nextConfig, { restartPending: plan.restartGateway });
       },

@@ -15,16 +15,24 @@ export function resolveStateDir(configured?: string): string {
   return configured ?? join(homedir(), ".openclaw", "data", "reef");
 }
 
-export async function generateAndStoreKeys(stateDir: string): Promise<ReefKeys> {
+export function generateReefKeys(): ReefKeys {
   const identity = generateIdentity();
   const random = (length: number) => crypto.getRandomValues(new Uint8Array(length));
-  const keys: ReefKeys = {
+  return {
     ...identity,
     auditKey: base64url(random(32)),
     replayKey: base64url(random(32)),
     keyEpoch: 1,
   };
+}
+
+export async function storeReefKeys(stateDir: string, keys: ReefKeys): Promise<void> {
   await writePrivateJson(join(stateDir, "keys.json"), keys);
+}
+
+export async function generateAndStoreKeys(stateDir: string): Promise<ReefKeys> {
+  const keys = generateReefKeys();
+  await storeReefKeys(stateDir, keys);
   return keys;
 }
 

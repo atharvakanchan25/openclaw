@@ -6521,6 +6521,7 @@ public struct CrestodianSetupAuthStartResult: Codable, Sendable {
     public let step: WizardStep?
     public let status: AnyCodable?
     public let error: String?
+    public let changed: Bool?
     public let channels: [String]?
     public let accounts: [[String: AnyCodable]]?
 
@@ -6530,6 +6531,7 @@ public struct CrestodianSetupAuthStartResult: Codable, Sendable {
         step: WizardStep? = nil,
         status: AnyCodable? = nil,
         error: String? = nil,
+        changed: Bool? = nil,
         channels: [String]? = nil,
         accounts: [[String: AnyCodable]]? = nil)
     {
@@ -6538,6 +6540,7 @@ public struct CrestodianSetupAuthStartResult: Codable, Sendable {
         self.step = step
         self.status = status
         self.error = error
+        self.changed = changed
         self.channels = channels
         self.accounts = accounts
     }
@@ -6548,6 +6551,7 @@ public struct CrestodianSetupAuthStartResult: Codable, Sendable {
         case step
         case status
         case error
+        case changed
         case channels
         case accounts
     }
@@ -6635,6 +6639,7 @@ public struct WizardStep: Codable, Sendable {
     public let initialvalue: AnyCodable?
     public let placeholder: String?
     public let sensitive: Bool?
+    public let navigation: [String: AnyCodable]?
     public let executor: AnyCodable?
     public let externalurl: String?
     public let devicecode: [String: AnyCodable]?
@@ -6649,6 +6654,7 @@ public struct WizardStep: Codable, Sendable {
         initialvalue: AnyCodable? = nil,
         placeholder: String? = nil,
         sensitive: Bool? = nil,
+        navigation: [String: AnyCodable]? = nil,
         executor: AnyCodable? = nil,
         externalurl: String? = nil,
         devicecode: [String: AnyCodable]? = nil)
@@ -6662,6 +6668,7 @@ public struct WizardStep: Codable, Sendable {
         self.initialvalue = initialvalue
         self.placeholder = placeholder
         self.sensitive = sensitive
+        self.navigation = navigation
         self.executor = executor
         self.externalurl = externalurl
         self.devicecode = devicecode
@@ -6677,6 +6684,7 @@ public struct WizardStep: Codable, Sendable {
         case initialvalue = "initialValue"
         case placeholder
         case sensitive
+        case navigation
         case executor
         case externalurl = "externalUrl"
         case devicecode = "deviceCode"
@@ -6688,6 +6696,7 @@ public struct WizardNextResult: Codable, Sendable {
     public let step: WizardStep?
     public let status: AnyCodable?
     public let error: String?
+    public let changed: Bool?
     public let channels: [String]?
     public let accounts: [[String: AnyCodable]]?
 
@@ -6696,6 +6705,7 @@ public struct WizardNextResult: Codable, Sendable {
         step: WizardStep? = nil,
         status: AnyCodable? = nil,
         error: String? = nil,
+        changed: Bool? = nil,
         channels: [String]? = nil,
         accounts: [[String: AnyCodable]]? = nil)
     {
@@ -6703,6 +6713,7 @@ public struct WizardNextResult: Codable, Sendable {
         self.step = step
         self.status = status
         self.error = error
+        self.changed = changed
         self.channels = channels
         self.accounts = accounts
     }
@@ -6712,6 +6723,7 @@ public struct WizardNextResult: Codable, Sendable {
         case step
         case status
         case error
+        case changed
         case channels
         case accounts
     }
@@ -6723,6 +6735,7 @@ public struct WizardStartResult: Codable, Sendable {
     public let step: WizardStep?
     public let status: AnyCodable?
     public let error: String?
+    public let changed: Bool?
     public let channels: [String]?
     public let accounts: [[String: AnyCodable]]?
 
@@ -6732,6 +6745,7 @@ public struct WizardStartResult: Codable, Sendable {
         step: WizardStep? = nil,
         status: AnyCodable? = nil,
         error: String? = nil,
+        changed: Bool? = nil,
         channels: [String]? = nil,
         accounts: [[String: AnyCodable]]? = nil)
     {
@@ -6740,6 +6754,7 @@ public struct WizardStartResult: Codable, Sendable {
         self.step = step
         self.status = status
         self.error = error
+        self.changed = changed
         self.channels = channels
         self.accounts = accounts
     }
@@ -6750,6 +6765,7 @@ public struct WizardStartResult: Codable, Sendable {
         case step
         case status
         case error
+        case changed
         case channels
         case accounts
     }
@@ -6758,18 +6774,30 @@ public struct WizardStartResult: Codable, Sendable {
 public struct WizardStatusResult: Codable, Sendable {
     public let status: AnyCodable
     public let error: String?
+    public let changed: Bool?
+    public let channels: [String]?
+    public let accounts: [[String: AnyCodable]]?
 
     public init(
         status: AnyCodable,
-        error: String? = nil)
+        error: String? = nil,
+        changed: Bool? = nil,
+        channels: [String]? = nil,
+        accounts: [[String: AnyCodable]]? = nil)
     {
         self.status = status
         self.error = error
+        self.changed = changed
+        self.channels = channels
+        self.accounts = accounts
     }
 
     private enum CodingKeys: String, CodingKey {
         case status
         case error
+        case changed
+        case channels
+        case accounts
     }
 }
 

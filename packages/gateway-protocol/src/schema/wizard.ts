@@ -27,6 +27,7 @@ export const WizardStartParamsSchema = closedObject({
 export const WizardAnswerSchema = closedObject({
   stepId: NonEmptyString,
   value: Type.Optional(Type.Unknown()),
+  navigation: Type.Optional(Type.Union([Type.Literal("back"), Type.Literal("forward")])),
 });
 
 /** Advances a wizard session, with an answer when the previous step requested input. */
@@ -59,6 +60,11 @@ const WizardDeviceCodeSchema = closedObject({
   message: Type.Optional(Type.String()),
 });
 
+const WizardStepNavigationSchema = closedObject({
+  canGoBack: Type.Optional(Type.Boolean()),
+  canGoForward: Type.Optional(Type.Boolean()),
+});
+
 /** UI contract for one wizard step rendered by gateway clients. */
 export const WizardStepSchema = closedObject({
   id: NonEmptyString,
@@ -78,6 +84,7 @@ export const WizardStepSchema = closedObject({
   initialValue: Type.Optional(Type.Unknown()),
   placeholder: Type.Optional(Type.String()),
   sensitive: Type.Optional(Type.Boolean()),
+  navigation: Type.Optional(WizardStepNavigationSchema),
   executor: Type.Optional(Type.Union([Type.Literal("gateway"), Type.Literal("client")])),
   externalUrl: Type.Optional(Type.String()),
   deviceCode: Type.Optional(WizardDeviceCodeSchema),
@@ -89,18 +96,26 @@ const WizardConfiguredAccountSchema = closedObject({
   accountId: NonEmptyString,
 });
 
-/** Common response fields for start and next calls. */
-const WizardResultFields = {
-  done: Type.Boolean(),
-  step: Type.Optional(WizardStepSchema),
-  status: Type.Optional(WizardRunStatusSchema),
-  error: Type.Optional(Type.String()),
+/** Saved channels-flow outcome retained across next/status/cancel responses. */
+const WizardPersistedResultFields = {
+  // Distinguishes a saved config-only result from a true no-op when no
+  // configured channel accounts are returned.
+  changed: Type.Optional(Type.Boolean()),
   // What the flow actually configured; set on the terminal result of
   // wizard.start flow "channels" sessions so clients run channel-specific
   // completion (e.g. WhatsApp QR linking for the right account) from the
   // real outcome rather than the preselection.
   channels: Type.Optional(Type.Array(NonEmptyString)),
   accounts: Type.Optional(Type.Array(WizardConfiguredAccountSchema)),
+};
+
+/** Common response fields for start and next calls. */
+const WizardResultFields = {
+  done: Type.Boolean(),
+  step: Type.Optional(WizardStepSchema),
+  status: Type.Optional(WizardRunStatusSchema),
+  error: Type.Optional(Type.String()),
+  ...WizardPersistedResultFields,
 };
 
 /** Result after advancing a wizard session. */
@@ -112,15 +127,17 @@ export const WizardStartResultSchema = closedObject({
   ...WizardResultFields,
 });
 
-/** Minimal status poll result used when the client does not need the next step. */
+/** Status/cancel result, including any durable channels-flow outcome. */
 export const WizardStatusResultSchema = closedObject({
   status: WizardRunStatusSchema,
   error: Type.Optional(Type.String()),
+  ...WizardPersistedResultFields,
 });
 
 // Wire types derive directly from local schema consts so public d.ts graphs never
 // pull in the ProtocolSchemas registry.
 export type WizardStartParams = Static<typeof WizardStartParamsSchema>;
+export type WizardAnswer = Static<typeof WizardAnswerSchema>;
 export type WizardNextParams = Static<typeof WizardNextParamsSchema>;
 export type WizardCancelParams = Static<typeof WizardCancelParamsSchema>;
 export type WizardStatusParams = Static<typeof WizardStatusParamsSchema>;

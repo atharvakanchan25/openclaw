@@ -1,7 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { fingerprint } from "../protocol/index.js";
 import { ReefChannelConfigSchema, type ReefChannelConfig } from "./config-schema.js";
-import { generateAndStoreKeys, resolveStateDir } from "./state.js";
+import { generateReefKeys, resolveStateDir, storeReefKeys } from "./state.js";
 import { ReefTransportClient } from "./transport.js";
 
 type Prompt = {
@@ -52,7 +52,15 @@ export const reefSetupWizard = {
     };
   },
   configure: async ({ cfg }: { cfg: OpenClawConfig }) => ({ cfg }),
-  configureInteractive: async ({ cfg, prompter }: { cfg: OpenClawConfig; prompter: Prompt }) => {
+  configureInteractive: async ({
+    cfg,
+    prompter,
+    options,
+  }: {
+    cfg: OpenClawConfig;
+    prompter: Prompt;
+    options?: { beforePersistentEffect?: () => Promise<void> };
+  }) => {
     const relayUrl = await prompter.text({
       message: "Reef relay URL",
       initialValue: "https://reefwire.ai",
@@ -98,17 +106,8 @@ export const reefSetupWizard = {
         initialValue: resolveStateDir(),
       }),
     );
-    const keys = await generateAndStoreKeys(stateDir);
+    const keys = generateReefKeys();
     const client = new ReefTransportClient(relayUrl, handle, keys);
-    if (!setupSession) {
-      const started = await client.authStart(email);
-      if (started.magicLink) {
-        await prompter.note(started.magicLink, "Development magic link");
-      }
-      const token = await prompter.text({ message: "Magic-link token", sensitive: true });
-      setupSession = (await client.authComplete(token)).session;
-    }
-    await client.createHandle(setupSession, requestPolicy);
     const provider = await prompter.select({
       message: "Guard provider",
       options: [
@@ -136,10 +135,23 @@ export const reefSetupWizard = {
       allowFrom: [],
       guard: { provider, pinnedModel, apiKeyEnv, policyVersion, timeoutMs: 30_000 },
     });
+    await options?.beforePersistentEffect?.();
+    await storeReefKeys(stateDir, keys);
     await prompter.note(
       fingerprint(keys.signing.publicKey, keys.encryption.publicKey),
       "Reef safety fingerprint — share out of band",
     );
+    if (!setupSession) {
+      await options?.beforePersistentEffect?.();
+      const started = await client.authStart(email);
+      if (started.magicLink) {
+        await prompter.note(started.magicLink, "Development magic link");
+      }
+      const token = await prompter.text({ message: "Magic-link token", sensitive: true });
+      await options?.beforePersistentEffect?.();
+      setupSession = (await client.authComplete(token)).session;
+    }
+    await client.createHandle(setupSession, requestPolicy);
     return {
       cfg: { ...cfg, channels: { ...cfg.channels, reef } } as OpenClawConfig,
       accountId: "default",

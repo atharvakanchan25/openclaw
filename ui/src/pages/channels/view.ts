@@ -123,6 +123,7 @@ ${props.snapshot ? JSON.stringify(props.snapshot, null, 2) : t("channels.health.
       multiselectValues: props.wizardMultiselect,
       onToggleMultiselect: props.onWizardToggleMultiselect,
       onAnswer: props.onWizardAnswer,
+      onNavigate: props.onWizardNavigate,
       onClose: props.onWizardClose,
       whatsappQrDataUrl: props.whatsappQrDataUrl,
       whatsappMessage: props.whatsappMessage,
